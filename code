@@ -1,0 +1,104 @@
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
+
+# Parameters updated for OCC authorization and adjusted ultra-optimistic scenario
+initial_price = 2.17  # Current XRP price (USD, May 2025)
+circulating_supply = 58.5e9  # Current circulating supply
+total_supply = 100e9  # Total XRP supply
+escrow_release_monthly = 1e9  # Monthly escrow release
+escrow_sold_monthly = 0.3e9  # Approx. sold per month
+initial_market_cap = initial_price * circulating_supply  # Current market cap
+target_price = 10.0  # Target price
+
+# Logistic growth parameters
+L = 50.0  # Carrying capacity (max price, speculative)
+t0 = 0  # Start time (May 2025)
+
+# Scenario parameters with adjusted ultra-optimistic scenario
+scenarios = {
+    "Ultra-Optimistic": {"k": 0.04 * 1.60, "social_impact": 0.25, "trading_volume": 8e9, "net_buy_factor": 1.15},  # 64% sentiment, 15% buy pressure
+    "Optimistic": {"k": 0.02 * 1.35, "social_impact": 0.20, "trading_volume": 6e9, "net_buy_factor": 1.05},      # 35% sentiment
+    "Baseline": {"k": 0.02 * 1.25, "social_impact": 0.15, "trading_volume": 6e9, "net_buy_factor": 1.05},       # 25% sentiment
+    "Pessimistic": {"k": 0.02 * 1.15, "social_impact": 0.10, "trading_volume": 6e9, "net_buy_factor": 1.05}      # 15% sentiment
+}
+
+# Simulation settings
+start_date = datetime(2025, 5, 1)
+months = 60  # Simulate for 5 years
+
+# Function to calculate logistic price
+def logistic_price(t, k, L, P0):
+    return L / (1 + ((L - P0) / P0) * np.exp(-k * t))
+
+# Run simulation
+results = {}
+for scenario, params in scenarios.items():
+    prices = [initial_price]
+    supply = circulating_supply
+    current_date = start_date
+    dates = [current_date]
+    
+    for t in range(1, months + 1):
+        # Update circulating supply (escrow release)
+        supply += escrow_sold_monthly
+        if supply > total_supply:
+            supply = total_supply
+        
+        # Calculate base price using logistic model
+        price = logistic_price(t, params["k"], L, initial_price)
+        
+        # Apply net buy pressure
+        price *= params["net_buy_factor"]
+        
+        # Adjust for social media/news volatility (only positive for ultra-optimistic)
+        if scenario == "Ultra-Optimistic":
+            social_impact = np.random.uniform(0, params["social_impact"])  # Only positive
+        else:
+            social_impact = np.random.uniform(-params["social_impact"], params["social_impact"])
+        price *= (1 + social_impact)
+        
+        # Adjust for supply increase (reduced downward pressure)
+        supply_factor = (circulating_supply / supply) ** 0.03
+        price *= supply_factor
+        
+        prices.append(price)
+        current_date += timedelta(days=30)
+        dates.append(current_date)
+        
+        # Check if target price is reached within 7 months for ultra-optimistic
+        if scenario == "Ultra-Optimistic" and t >= 7 and price >= target_price:
+            break
+        elif scenario != "Ultra-Optimistic" and price >= target_price:
+            break
+    
+    results[scenario] = {"dates": dates, "prices": prices}
+
+# Analyze results
+print("XRP Price Prediction to Reach $10 USD:")
+for scenario, data in results.items():
+    final_price = data["prices"][-1]
+    final_date = data["dates"][-1]
+    if final_price >= target_price:
+        print(f"{scenario}: Reaches ${target_price:.2f} by {final_date.strftime('%B %Y')}")
+    else:
+        print(f"{scenario}: Does not reach $10 by {final_date.strftime('%B %Y')}, final price ${final_price:.2f}")
+
+# Plot results
+plt.figure(figsize=(10, 6))
+for scenario, data in results.items():
+    plt.plot(data["dates"], data["prices"], label=scenario)
+plt.axhline(y=target_price, color='r', linestyle='--', label='$10 Target')
+plt.title("XRP Price Prediction with Adjusted Ultra-Optimistic Scenario (May 2025 - May 2030)")
+plt.xlabel("Date")
+plt.ylabel("Price (USD)")
+plt.legend()
+plt.grid(True)
+plt.savefig("xrp_price_prediction_adjusted.png")
+plt.close()
+
+# Save results to CSV
+for scenario, data in results.items():
+    df = pd.DataFrame({"Date": data["dates"], "Price": data["prices"]})
+    df.to_csv(f"xrp_price_{scenario.lower().replace('-', '_')}.csv", index=False)
